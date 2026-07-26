@@ -110,6 +110,28 @@ final class ModelTests: XCTestCase, TestRunnable {
         XCTAssertEqual(msg.serverContent?.interrupted, false)
     }
 
+    func testSessionRecordEncoding() throws {
+        let errorItem = ExtractedErrorItem(
+            originalSentence: "He go to school yesterday.",
+            correctedSentence: "He went to school yesterday.",
+            explanation: "Use past tense 'went' for yesterday.",
+            category: "Grammar"
+        )
+        let record = SessionRecord(
+            id: UUID(),
+            date: Date(),
+            durationSeconds: 120,
+            transcripts: [TranscriptEntry(speaker: "Learner", text: "He go to school yesterday.")],
+            extractedErrors: [errorItem]
+        )
+        let encoder = JSONEncoder()
+        let data = try encoder.encode(record)
+        let decoder = JSONDecoder()
+        let decoded = try decoder.decode(SessionRecord.self, from: data)
+        XCTAssertEqual(decoded.extractedErrors.count, 1)
+        XCTAssertEqual(decoded.extractedErrors.first?.correctedSentence, "He went to school yesterday.")
+    }
+
     public func runAllTests() async throws {
         setUp()
         try testAppConfigDefaultsAndCodable()
@@ -129,6 +151,10 @@ final class ModelTests: XCTestCase, TestRunnable {
 
         setUp()
         try testGeminiServerContentDecoding()
+        tearDown()
+
+        setUp()
+        try testSessionRecordEncoding()
         tearDown()
     }
 }

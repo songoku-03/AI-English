@@ -70,6 +70,7 @@ final class Tier3CrossFeatureInteractionTests: XCTestCase, TestRunnable {
     func testHotkeyTriggerMutesAudioInput() async throws {
         viewModel.config.apiKey = "AIzaSyD-ValidKey123456"
         await viewModel.startSession()
+        await viewModel.confirmScreenSelectionAndStartSession()
         XCTAssertTrue(viewModel.isSessionActive)
 
         // Trigger mute hotkey (Ctrl+Option+M)
@@ -110,6 +111,7 @@ final class Tier3CrossFeatureInteractionTests: XCTestCase, TestRunnable {
     func testBargeInFlushesAudioPlaybackQueue() async throws {
         viewModel.config.apiKey = "AIzaSyD-ValidKey123456"
         await viewModel.startSession()
+        await viewModel.confirmScreenSelectionAndStartSession()
 
         // Queue AI audio playback chunks
         audioEngine.playAudioChunk(data: Data([0x10, 0x20]))
@@ -134,6 +136,7 @@ final class Tier3CrossFeatureInteractionTests: XCTestCase, TestRunnable {
     func testScreenCaptureStreamDispatchesBase64PayloadToWebSocket() async throws {
         viewModel.config.apiKey = "AIzaSyD-ValidKey123456"
         await viewModel.startSession()
+        await viewModel.confirmScreenSelectionAndStartSession()
 
         XCTAssertTrue(screenCap.isCapturing)
 

@@ -1,13 +1,27 @@
 import SwiftUI
 
 public struct AIEnglishTutorApp: App {
-    public init() {}
+    @StateObject private var viewModel: AppViewModel
+
+    public init() {
+        _viewModel = StateObject(wrappedValue: AppViewModel(
+            keychainService: KeychainService(),
+            hotkeyService: GlobalHotkeyService(),
+            screenCaptureService: ScreenCaptureService(),
+            audioEngineService: AudioEngineService(),
+            geminiLiveClient: GeminiLiveClient(),
+            sessionStorageService: SessionStorageService()
+        ))
+    }
 
     public var body: some Scene {
-        WindowGroup {
-            Text("AI English Tutor")
-                .font(.title)
-                .padding()
+        WindowGroup("AI English Tutor") {
+            MainWindow(viewModel: viewModel)
+        }
+        MenuBarExtra("AI English Tutor", systemImage: "graduationcap") {
+            MenuBarView(viewModel: viewModel)
         }
     }
 }
+
+

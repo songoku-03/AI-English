@@ -33,10 +33,11 @@ public final class MockAudioEngineService: AudioEngineServiceProtocol, @unchecke
     public var shouldFailToStartInput: Bool = false
 
     public var onPCMDataHandler: (@Sendable (Data) -> Void)?
+    public var onAudioLevelHandler: (@Sendable (Float) -> Void)?
 
     public init() {}
 
-    public func startInputStreaming(onPCMData: @escaping @Sendable (Data) -> Void) throws {
+    public func startInputStreaming(onPCMData: @escaping @Sendable (Data) -> Void, onAudioLevel: (@Sendable (Float) -> Void)? = nil) throws {
         lock.lock()
         defer { lock.unlock() }
 
@@ -45,6 +46,7 @@ public final class MockAudioEngineService: AudioEngineServiceProtocol, @unchecke
         }
 
         self.onPCMDataHandler = onPCMData
+        self.onAudioLevelHandler = onAudioLevel
         self.isStreaming = true
     }
 

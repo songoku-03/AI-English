@@ -3,6 +3,7 @@ import ScreenCaptureKit
 import CoreGraphics
 import CoreMedia
 import AppKit
+import CryptoKit
 
 private final class ScreenCaptureStreamHandler: NSObject, SCStreamOutput, @unchecked Sendable {
     private let onFrame: @Sendable (Data) -> Void
@@ -21,7 +22,9 @@ private final class ScreenCaptureStreamHandler: NSObject, SCStreamOutput, @unche
         let context = CIContext()
         guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
 
-        if let compressed = service?.processCGImage(cgImage, maxWidth: 1024.0, compressionQuality: 0.7) {
+        guard let service = service else { return }
+        let compressed = service.processCGImage(cgImage, maxWidth: CGFloat(service.maxDimension), compressionQuality: 0.7)
+        if service.shouldEmitFrame(jpegData: compressed) {
             onFrame(compressed)
         }
     }
@@ -30,16 +33,39 @@ private final class ScreenCaptureStreamHandler: NSObject, SCStreamOutput, @unche
 public final class ScreenCaptureService: ScreenCaptureServiceProtocol, @unchecked Sendable {
     private let lock = NSLock()
     public private(set) var isCapturing: Bool = false
+    public private(set) var frameRate: Int = 1
+    public private(set) var maxDimension: Int = 1024
     private var stream: SCStream?
     private var streamHandler: ScreenCaptureStreamHandler?
+    private var lastFrameHash: String?
+    private var lastFrameEmittedTime: Date?
 
     public init() {}
 
     public func checkPermission() -> Bool {
         if #available(macOS 14.0, *) {
-            return CGPreflightScreenCaptureAccess()
+            if CGPreflightScreenCaptureAccess() {
+                return true
+            }
+        }
+        if let cgImage = CGDisplayCreateImage(CGMainDisplayID()), cgImage.width > 1 {
+            return true
+        }
+        return false
+    }
+
+    public func requestPermission() -> Bool {
+        if #available(macOS 14.0, *) {
+            return CGRequestScreenCaptureAccess()
         }
         return true
+    }
+
+    public func openScreenCaptureSettings() {
+        let _ = requestPermission()
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private func tryStartCapturing() -> Bool {
@@ -55,25 +81,89 @@ public final class ScreenCaptureService: ScreenCaptureServiceProtocol, @unchecke
         self.stream = stream
         self.streamHandler = streamHandler
         self.isCapturing = true
+        self.lastFrameHash = nil
+        self.lastFrameEmittedTime = nil
     }
 
-    public func startCapture(onFrame: @escaping @Sendable (Data) -> Void) async throws {
+    public func getAvailableDisplays() async throws -> [DisplayInfo] {
+        if checkPermission() {
+            if let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true) {
+                let mainID = CGMainDisplayID()
+                let displays = content.displays.enumerated().map { index, display in
+                    let isMain = (display.displayID == mainID) || (index == 0)
+                    let name = isMain ? "Main Display" : "Display \(index + 1)"
+                    var thumbnail: NSImage? = nil
+                    if let cgImage = CGDisplayCreateImage(display.displayID) {
+                        let jpegData = processCGImage(cgImage, maxWidth: 320.0, compressionQuality: 0.7)
+                        thumbnail = NSImage(data: jpegData)
+                    }
+                    return DisplayInfo(
+                        id: display.displayID,
+                        name: name,
+                        width: display.width,
+                        height: display.height,
+                        isMain: isMain,
+                        thumbnail: thumbnail
+                    )
+                }
+                if !displays.isEmpty { return displays }
+            }
+        }
+
+        // Quartz Display Services fallback (Always works for physical screen enumeration)
+        var displayCount: UInt32 = 0
+        var activeDisplays = [CGDirectDisplayID](repeating: 0, count: 16)
+        CGGetActiveDisplayList(16, &activeDisplays, &displayCount)
+
+        let mainID = CGMainDisplayID()
+        return (0..<Int(displayCount)).map { index in
+            let id = activeDisplays[index]
+            let isMain = (id == mainID)
+            let bounds = CGDisplayBounds(id)
+            let name = isMain ? "Main Display" : "Display \(index + 1)"
+            var thumbnail: NSImage? = nil
+            if let cgImage = CGDisplayCreateImage(id) {
+                let jpegData = processCGImage(cgImage, maxWidth: 320.0, compressionQuality: 0.7)
+                thumbnail = NSImage(data: jpegData)
+            }
+            return DisplayInfo(
+                id: id,
+                name: name,
+                width: Int(bounds.width),
+                height: Int(bounds.height),
+                isMain: isMain,
+                thumbnail: thumbnail
+            )
+        }
+    }
+
+
+    public func startCapture(displayID: CGDirectDisplayID? = nil, frameRate: Int = 1, maxDimension: Int = 1024, onFrame: @escaping @Sendable (Data) -> Void) async throws {
         guard checkPermission() else {
             throw ScreenCaptureError.permissionDenied
         }
 
         guard tryStartCapturing() else { return }
 
+        self.frameRate = frameRate
+        self.maxDimension = maxDimension
+
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        guard let mainDisplay = content.displays.first else {
+        
+        let targetDisplay: SCDisplay
+        if let displayID = displayID, let matched = content.displays.first(where: { $0.displayID == displayID }) {
+            targetDisplay = matched
+        } else if let mainDisplay = content.displays.first {
+            targetDisplay = mainDisplay
+        } else {
             throw ScreenCaptureError.noDisplayAvailable
         }
 
-        let filter = SCContentFilter(display: mainDisplay, excludingApplications: [], exceptingWindows: [])
+        let filter = SCContentFilter(display: targetDisplay, excludingApplications: [], exceptingWindows: [])
         let config = SCStreamConfiguration()
-        config.width = mainDisplay.width
-        config.height = mainDisplay.height
-        config.minimumFrameInterval = CMTime(value: 1, timescale: 1) // 1fps
+        config.width = targetDisplay.width
+        config.height = targetDisplay.height
+        config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(1, frameRate)))
         config.pixelFormat = kCVPixelFormatType_32BGRA
 
         let streamHandler = ScreenCaptureStreamHandler(service: self, onFrame: onFrame)
@@ -85,24 +175,70 @@ public final class ScreenCaptureService: ScreenCaptureServiceProtocol, @unchecke
         finalizeCaptureStart(stream: stream, streamHandler: streamHandler)
     }
 
+    public func startCapture(displayID: CGDirectDisplayID?, onFrame: @escaping @Sendable (Data) -> Void) async throws {
+        try await startCapture(displayID: displayID, frameRate: 1, maxDimension: 1024, onFrame: onFrame)
+    }
+
+    public func startCapture(onFrame: @escaping @Sendable (Data) -> Void) async throws {
+        try await startCapture(displayID: nil, frameRate: 1, maxDimension: 1024, onFrame: onFrame)
+    }
+
     public func stopCapture() {
         lock.lock()
         let currentStream = stream
         stream = nil
         streamHandler = nil
         isCapturing = false
+        lastFrameHash = nil
+        lastFrameEmittedTime = nil
         lock.unlock()
 
         currentStream?.stopCapture { _ in }
+    }
+
+    public func shouldEmitFrame(jpegData: Data, timestamp: Date = Date()) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if frameRate > 1 {
+            lastFrameEmittedTime = timestamp
+            return true
+        }
+
+        let hash = SHA256.hash(data: jpegData).compactMap { String(format: "%02x", $0) }.joined()
+
+        if let lastHash = lastFrameHash, lastHash == hash {
+            if let lastTime = lastFrameEmittedTime, timestamp.timeIntervalSince(lastTime) < 5.0 {
+                return false
+            }
+        }
+
+        lastFrameHash = hash
+        lastFrameEmittedTime = timestamp
+        return true
     }
 
     public func processCGImage(_ cgImage: CGImage, maxWidth: CGFloat, compressionQuality: CGFloat) -> Data {
         let origWidth = CGFloat(cgImage.width)
         let origHeight = CGFloat(cgImage.height)
 
-        let targetWidth = min(origWidth, maxWidth)
-        let scaleRatio = targetWidth / origWidth
-        let targetHeight = origHeight * scaleRatio
+        let targetWidth: CGFloat
+        let targetHeight: CGFloat
+
+        if maxWidth <= 0 {
+            targetWidth = origWidth
+            targetHeight = origHeight
+        } else {
+            let maxDim = max(origWidth, origHeight)
+            if maxDim > maxWidth {
+                let scaleRatio = maxWidth / maxDim
+                targetWidth = origWidth * scaleRatio
+                targetHeight = origHeight * scaleRatio
+            } else {
+                targetWidth = origWidth
+                targetHeight = origHeight
+            }
+        }
 
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
@@ -139,3 +275,4 @@ public final class ScreenCaptureService: ScreenCaptureServiceProtocol, @unchecke
         return frameData
     }
 }
+

@@ -191,6 +191,7 @@ public struct TestRunnerMain {
             ("GeminiLiveClientTests", GeminiLiveClientTests()),
             ("ViewModelTests", ViewModelTests()),
             ("ModelTests", ModelTests()),
+            ("SessionStorageTests", SessionStorageTests()),
             ("IntegrationTests", IntegrationTests()),
             ("Tier1FeatureCoverageTests", Tier1FeatureCoverageTests()),
             ("Tier2BoundaryCornerCaseTests", Tier2BoundaryCornerCaseTests()),

@@ -9,7 +9,7 @@ public enum AudioEngineError: Error, Equatable, Sendable {
 }
 
 public protocol AudioEngineServiceProtocol: Sendable {
-    func startInputStreaming(onPCMData: @escaping @Sendable (Data) -> Void) throws
+    func startInputStreaming(onPCMData: @escaping @Sendable (Data) -> Void, onAudioLevel: (@Sendable (Float) -> Void)?) throws
     func playAudioChunk(data: Data)
     func stopAudio()
     func interruptPlayback()
@@ -17,4 +17,10 @@ public protocol AudioEngineServiceProtocol: Sendable {
     var isMuted: Bool { get set }
     var isPlaying: Bool { get }
     var playbackQueueCount: Int { get }
+}
+
+public extension AudioEngineServiceProtocol {
+    func startInputStreaming(onPCMData: @escaping @Sendable (Data) -> Void) throws {
+        try startInputStreaming(onPCMData: onPCMData, onAudioLevel: nil)
+    }
 }

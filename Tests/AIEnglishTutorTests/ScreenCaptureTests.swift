@@ -110,6 +110,96 @@ final class ScreenCaptureTests: XCTestCase, TestRunnable {
         XCTAssertFalse(scaledRaw.isEmpty)
     }
 
+    func testFrameDeduplicationAndHeartbeat() {
+        let data1 = Data([0x01, 0x02, 0x03, 0x04])
+        let data2 = Data([0x05, 0x06, 0x07, 0x08])
+
+        let start = Date()
+        // 1. Initial frame should be emitted
+        XCTAssertTrue(realScreenCaptureService.shouldEmitFrame(jpegData: data1, timestamp: start))
+
+        // 2. Identical frame within 5s (1s later) should be skipped
+        XCTAssertFalse(realScreenCaptureService.shouldEmitFrame(jpegData: data1, timestamp: start.addingTimeInterval(1.0)))
+
+        // 3. Identical frame within 5s (4.9s later) should be skipped
+        XCTAssertFalse(realScreenCaptureService.shouldEmitFrame(jpegData: data1, timestamp: start.addingTimeInterval(4.9)))
+
+        // 4. Identical frame after 5s (5.0s later) should be emitted as heartbeat
+        XCTAssertTrue(realScreenCaptureService.shouldEmitFrame(jpegData: data1, timestamp: start.addingTimeInterval(5.0)))
+
+        // 5. Different frame 1s after heartbeat should be emitted immediately
+        XCTAssertTrue(realScreenCaptureService.shouldEmitFrame(jpegData: data2, timestamp: start.addingTimeInterval(6.0)))
+    }
+
+    func testGetAvailableDisplaysAndOpenSettings() async throws {
+        let displays = try await mockScreenCaptureService.getAvailableDisplays()
+        XCTAssertEqual(displays.count, 2)
+        XCTAssertTrue(displays[0].isMain)
+        XCTAssertFalse(displays[1].isMain)
+        XCTAssertEqual(displays[0].name, "Mock Main Display")
+
+        mockScreenCaptureService.openScreenCaptureSettings()
+        XCTAssertTrue(mockScreenCaptureService.openScreenCaptureSettingsCalled)
+    }
+
+    func testConfigurableFPSAndResolution() async throws {
+        // Test MockScreenCaptureService stores configured frameRate and maxDimension
+        try await mockScreenCaptureService.startCapture(displayID: 1, frameRate: 5, maxDimension: 1280) { _ in }
+        XCTAssertTrue(mockScreenCaptureService.isCapturing)
+        XCTAssertEqual(mockScreenCaptureService.frameRate, 5)
+        XCTAssertEqual(mockScreenCaptureService.maxDimension, 1280)
+        mockScreenCaptureService.stopCapture()
+
+        // Test default parameters (frameRate = 1, maxDimension = 1024)
+        try await mockScreenCaptureService.startCapture { _ in }
+        XCTAssertEqual(mockScreenCaptureService.frameRate, 1)
+        XCTAssertEqual(mockScreenCaptureService.maxDimension, 1024)
+        mockScreenCaptureService.stopCapture()
+
+        // Test RealScreenCaptureService processCGImage with maxDimension scaling (HD 1280, Full HD 1920, Original 0)
+        let size = NSSize(width: 1920, height: 1080)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor.green.set()
+        NSRect(origin: .zero, size: size).fill()
+        image.unlockFocus()
+
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            XCTFail("Failed to create test CGImage")
+            return
+        }
+
+        // HD: maxDimension = 1280 -> 1280x720
+        let hdData = realScreenCaptureService.processCGImage(cgImage, maxWidth: 1280.0, compressionQuality: 0.7)
+        if let hdImage = NSImage(data: hdData),
+           let hdCG = hdImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            XCTAssertEqual(hdCG.width, 1280)
+            XCTAssertEqual(hdCG.height, 720)
+        } else {
+            XCTFail("Failed to decode HD JPEG")
+        }
+
+        // Full HD: maxDimension = 1920 -> 1920x1080
+        let fhdData = realScreenCaptureService.processCGImage(cgImage, maxWidth: 1920.0, compressionQuality: 0.7)
+        if let fhdImage = NSImage(data: fhdData),
+           let fhdCG = fhdImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            XCTAssertEqual(fhdCG.width, 1920)
+            XCTAssertEqual(fhdCG.height, 1080)
+        } else {
+            XCTFail("Failed to decode Full HD JPEG")
+        }
+
+        // Original: maxDimension = 0 -> 1920x1080
+        let origData = realScreenCaptureService.processCGImage(cgImage, maxWidth: 0.0, compressionQuality: 0.7)
+        if let origImage = NSImage(data: origData),
+           let origCG = origImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            XCTAssertEqual(origCG.width, 1920)
+            XCTAssertEqual(origCG.height, 1080)
+        } else {
+            XCTFail("Failed to decode original JPEG")
+        }
+    }
+
     public func runAllTests() async throws {
         setUp()
         try await testStartAndStopCapture()
@@ -126,5 +216,18 @@ final class ScreenCaptureTests: XCTestCase, TestRunnable {
         setUp()
         testMockScreenCaptureServiceImageResizingAndCompression()
         tearDown()
+
+        setUp()
+        testFrameDeduplicationAndHeartbeat()
+        tearDown()
+
+        setUp()
+        try await testGetAvailableDisplaysAndOpenSettings()
+        tearDown()
+
+        setUp()
+        try await testConfigurableFPSAndResolution()
+        tearDown()
     }
 }
+

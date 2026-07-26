@@ -6,9 +6,15 @@ public final class MockScreenCaptureService: ScreenCaptureServiceProtocol, @unch
     private let lock = NSLock()
 
     public private(set) var isCapturing: Bool = false
+    public private(set) var frameRate: Int = 1
+    public private(set) var maxDimension: Int = 1024
+    public var lastCapturedFPS: Int { frameRate }
+    public var lastCapturedMaxDimension: Int { maxDimension }
     public var hasPermission: Bool = true
     public var shouldFailToStart: Bool = false
     public private(set) var lastProcessedWidth: Double = 0.0
+
+    public private(set) var openScreenCaptureSettingsCalled: Bool = false
 
     public var onFrameCallback: (@Sendable (Data) -> Void)?
 
@@ -22,6 +28,18 @@ public final class MockScreenCaptureService: ScreenCaptureServiceProtocol, @unch
         return hasPermission
     }
 
+    public func requestPermission() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return hasPermission
+    }
+
+    public func openScreenCaptureSettings() {
+        lock.lock()
+        defer { lock.unlock() }
+        openScreenCaptureSettingsCalled = true
+    }
+
     private func setCaptureState(isCapturing: Bool, handler: (@Sendable (Data) -> Void)?) {
         lock.lock()
         defer { lock.unlock() }
@@ -29,7 +47,21 @@ public final class MockScreenCaptureService: ScreenCaptureServiceProtocol, @unch
         self.onFrameCallback = handler
     }
 
-    public func startCapture(onFrame: @escaping @Sendable (Data) -> Void) async throws {
+    public func getAvailableDisplays() async throws -> [DisplayInfo] {
+        return [
+            DisplayInfo(id: 1, name: "Mock Main Display", width: 1920, height: 1080, isMain: true),
+            DisplayInfo(id: 2, name: "Mock External Display", width: 2560, height: 1440, isMain: false)
+        ]
+    }
+
+    private func setQuality(fps: Int, maxDimension: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.frameRate = fps
+        self.maxDimension = maxDimension
+    }
+
+    public func startCapture(displayID: CGDirectDisplayID? = nil, fps: Int = 1, maxDimension: Int = 1280, onFrame: @escaping @Sendable (Data) -> Void) async throws {
         guard checkPermission() else {
             throw ScreenCaptureError.permissionDenied
         }
@@ -38,11 +70,21 @@ public final class MockScreenCaptureService: ScreenCaptureServiceProtocol, @unch
             throw ScreenCaptureError.captureFailed("Mock start capture failed")
         }
 
+        setQuality(fps: fps, maxDimension: maxDimension)
         setCaptureState(isCapturing: true, handler: onFrame)
+    }
+
+    public func startCapture(displayID: CGDirectDisplayID?, onFrame: @escaping @Sendable (Data) -> Void) async throws {
+        try await startCapture(displayID: displayID, frameRate: 1, maxDimension: 1024, onFrame: onFrame)
+    }
+
+    public func startCapture(onFrame: @escaping @Sendable (Data) -> Void) async throws {
+        try await startCapture(displayID: nil, frameRate: 1, maxDimension: 1024, onFrame: onFrame)
     }
 
     public func stopCapture() {
         setCaptureState(isCapturing: false, handler: nil)
+
     }
 
     public func resizeAndCompress(frameData: Data, maxWidth: CGFloat, compressionQuality: CGFloat) -> Data {
@@ -89,7 +131,10 @@ public final class MockScreenCaptureService: ScreenCaptureServiceProtocol, @unch
     }
 
     public func emitMockFrame(data: Data) {
-        let processed = resizeAndCompress(frameData: data, maxWidth: 1024.0, compressionQuality: 0.7)
+        lock.lock()
+        let maxDim = CGFloat(maxDimension)
+        lock.unlock()
+        let processed = resizeAndCompress(frameData: data, maxWidth: maxDim, compressionQuality: 0.7)
         simulateFrame(data: processed)
     }
 

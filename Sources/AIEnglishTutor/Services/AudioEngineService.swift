@@ -32,9 +32,12 @@ public final class AudioEngineService: AudioEngineServiceProtocol, @unchecked Se
         return pendingBufferCount
     }
 
-    public func startInputStreaming(onPCMData: @escaping @Sendable (Data) -> Void) throws {
+    private var audioLevelCallback: (@Sendable (Float) -> Void)?
+
+    public func startInputStreaming(onPCMData: @escaping @Sendable (Data) -> Void, onAudioLevel: (@Sendable (Float) -> Void)? = nil) throws {
         lock.lock()
         self.pcmCallback = onPCMData
+        self.audioLevelCallback = onAudioLevel
         lock.unlock()
 
         let inputNode = audioEngine.inputNode
@@ -53,10 +56,27 @@ public final class AudioEngineService: AudioEngineServiceProtocol, @unchecked Se
             guard let self = self else { return }
             self.lock.lock()
             let isMutedCurrent = self.isMuted
-            let callback = self.pcmCallback
+            let pcmCb = self.pcmCallback
+            let levelCb = self.audioLevelCallback
             self.lock.unlock()
 
-            guard !isMutedCurrent, let callback = callback else { return }
+            // Compute RMS Audio Level even when muted or active
+            if let floatData = buffer.floatChannelData?[0] {
+                let channelData = floatData
+                let frameLength = Int(buffer.frameLength)
+                if frameLength > 0 {
+                    var sum: Float = 0
+                    for i in 0..<frameLength {
+                        let sample = channelData[i]
+                        sum += sample * sample
+                    }
+                    let rms = sqrt(sum / Float(frameLength))
+                    let normalizedLevel = min(1.0, max(0.0, rms * 5.0))
+                    levelCb?(normalizedLevel)
+                }
+            }
+
+            guard !isMutedCurrent, let callback = pcmCb else { return }
 
             let frameCapacity = AVAudioFrameCount(Double(buffer.frameLength) * 16000.0 / inputFormat.sampleRate)
             guard frameCapacity > 0, let pcmBuffer = AVAudioPCMBuffer(pcmFormat: self.targetInputFormat, frameCapacity: frameCapacity) else { return }
