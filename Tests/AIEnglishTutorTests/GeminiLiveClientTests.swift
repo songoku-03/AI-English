@@ -1,3 +1,4 @@
+import Foundation
 #if canImport(XCTest)
 import XCTest
 #endif
@@ -82,6 +83,24 @@ final class GeminiLiveClientTests: XCTestCase, TestRunnable {
         XCTAssertEqual(decodedServer.serverContent?.interrupted, false)
     }
 
+    func testConnectEmptyApiKeyThrowsError() async {
+        do {
+            try await mockGeminiClient.connect(apiKey: "   ")
+            XCTFail("Should throw emptyApiKey error")
+        } catch {
+            XCTAssertEqual(error as? GeminiLiveError, GeminiLiveError.emptyApiKey)
+        }
+    }
+
+    func testConnectShortApiKeyThrowsError() async {
+        do {
+            try await mockGeminiClient.connect(apiKey: "1234567")
+            XCTFail("Should throw invalidApiKeyFormat error")
+        } catch {
+            XCTAssertEqual(error as? GeminiLiveError, GeminiLiveError.invalidApiKeyFormat)
+        }
+    }
+
     public func runAllTests() async throws {
         setUp()
         try await testConnectAndSendPayloads()
@@ -89,6 +108,14 @@ final class GeminiLiveClientTests: XCTestCase, TestRunnable {
 
         setUp()
         try await testModelFallbackOnConnectionFailure()
+        tearDown()
+
+        setUp()
+        await testConnectEmptyApiKeyThrowsError()
+        tearDown()
+
+        setUp()
+        await testConnectShortApiKeyThrowsError()
         tearDown()
 
         setUp()

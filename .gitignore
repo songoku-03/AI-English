@@ -1,5 +1,7 @@
 # Build & IDE
 .build/
+build/
+DerivedData/
 .swiftpm/
 .DS_Store
 *.xcodeproj/xcuserdata/

@@ -1,3 +1,4 @@
+import Foundation
 #if canImport(XCTest)
 import XCTest
 #endif
@@ -22,10 +23,10 @@ final class IntegrationTests: XCTestCase, TestRunnable {
         XCTAssertTrue(geminiClient.isConnected)
 
         // 3. Register Global Hotkeys
-        var sessionActive = true
+        let sessionActive = TestBox(true)
         try hotkey.registerHotkeys(
             onMuteToggle: {},
-            onSessionToggle: { sessionActive.toggle() }
+            onSessionToggle: { sessionActive.value.toggle() }
         )
         XCTAssertTrue(hotkey.isRegistered)
 
@@ -49,18 +50,18 @@ final class IntegrationTests: XCTestCase, TestRunnable {
         XCTAssertEqual(geminiClient.sentImages.count, 1)
 
         // 6. Simulate Server Response
-        var receivedTranscript: TranscriptEntry?
+        let receivedTranscript = TestBox<TranscriptEntry?>(nil)
         geminiClient.onTranscript = { speaker, text in
-            receivedTranscript = TranscriptEntry(
-                speaker: speaker == "user" ? .user : .tutor,
+            receivedTranscript.value = TranscriptEntry(
+                speaker: speaker,
                 text: text
             )
         }
 
         geminiClient.simulateServerTranscript(speaker: "tutor", text: "Integration test passed!")
-        XCTAssertNotNil(receivedTranscript)
-        XCTAssertEqual(receivedTranscript?.speaker, .tutor)
-        XCTAssertEqual(receivedTranscript?.text, "Integration test passed!")
+        XCTAssertNotNil(receivedTranscript.value)
+        XCTAssertEqual(receivedTranscript.value?.speaker, "tutor")
+        XCTAssertEqual(receivedTranscript.value?.text, "Integration test passed!")
 
         // 7. Cleanup
         capture.stopCapture()

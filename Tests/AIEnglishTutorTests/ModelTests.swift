@@ -1,3 +1,4 @@
+import Foundation
 #if canImport(XCTest)
 import XCTest
 #endif
@@ -20,8 +21,8 @@ final class ModelTests: XCTestCase, TestRunnable {
     }
 
     func testTranscriptEntryCodable() throws {
-        let entry = TranscriptEntry(speaker: .tutor, text: "Welcome to English practice!")
-        XCTAssertEqual(entry.speaker, .tutor)
+        let entry = TranscriptEntry(speaker: "Tutor", text: "Welcome to English practice!")
+        XCTAssertEqual(entry.speaker, "Tutor")
         XCTAssertEqual(entry.text, "Welcome to English practice!")
 
         let encoder = JSONEncoder()

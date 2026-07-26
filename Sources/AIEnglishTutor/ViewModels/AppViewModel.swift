@@ -80,7 +80,7 @@ public final class AppViewModel: ObservableObject {
         )
 
         // Gemini Callbacks - Protocol abstraction only, no downcasts!
-        var client = geminiLiveClient
+        let client = geminiLiveClient
         client.onTranscript = { [weak self] speaker, text in
             Task { @MainActor [weak self] in
                 self?.liveSubtitle = text

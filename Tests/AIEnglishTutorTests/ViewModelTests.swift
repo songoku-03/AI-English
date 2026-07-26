@@ -1,3 +1,4 @@
+import Foundation
 #if canImport(XCTest)
 import XCTest
 #endif
@@ -12,6 +13,7 @@ final class ViewModelTests: XCTestCase, TestRunnable {
     var geminiClient: MockGeminiLiveClient!
     var viewModel: AppViewModel!
 
+    @MainActor
     override func setUp() {
         super.setUp()
         keychain = MockKeychainService()
@@ -29,6 +31,7 @@ final class ViewModelTests: XCTestCase, TestRunnable {
         )
     }
 
+    @MainActor
     override func tearDown() {
         viewModel = nil
         geminiClient = nil
@@ -91,6 +94,7 @@ final class ViewModelTests: XCTestCase, TestRunnable {
         XCTAssertTrue(export.contains("System: [User Interrupted AI Playback]"))
     }
 
+    @MainActor
     public func runAllTests() async throws {
         setUp()
         testViewModelInitialState()

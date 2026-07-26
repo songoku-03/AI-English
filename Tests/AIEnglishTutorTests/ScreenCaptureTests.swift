@@ -1,3 +1,4 @@
+import Foundation
 #if canImport(XCTest)
 import XCTest
 #endif
@@ -21,14 +22,14 @@ final class ScreenCaptureTests: XCTestCase, TestRunnable {
     }
 
     func testStartAndStopCapture() async throws {
-        var frameReceived = false
+        let frameReceived = TestBox(false)
         try await mockScreenCaptureService.startCapture { _ in
-            frameReceived = true
+            frameReceived.value = true
         }
 
         XCTAssertTrue(mockScreenCaptureService.isCapturing)
         mockScreenCaptureService.emitMockFrame(data: Data([0x01, 0x02]))
-        XCTAssertTrue(frameReceived)
+        XCTAssertTrue(frameReceived.value)
 
         mockScreenCaptureService.stopCapture()
         XCTAssertFalse(mockScreenCaptureService.isCapturing)
@@ -73,6 +74,42 @@ final class ScreenCaptureTests: XCTestCase, TestRunnable {
         }
     }
 
+    func testMockScreenCaptureServiceImageResizingAndCompression() {
+        let size = NSSize(width: 1920, height: 1080)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor.red.set()
+        NSRect(origin: .zero, size: size).fill()
+        image.unlockFocus()
+
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            XCTFail("Failed to create test CGImage")
+            return
+        }
+        let rep = NSBitmapImageRep(cgImage: cgImage)
+        guard let inputData = rep.representation(using: .jpeg, properties: [.compressionFactor: 1.0]) else {
+            XCTFail("Failed to create JPEG data")
+            return
+        }
+
+        let processedData = mockScreenCaptureService.resizeAndCompress(frameData: inputData, maxWidth: 1024.0, compressionQuality: 0.7)
+        XCTAssertEqual(mockScreenCaptureService.lastProcessedWidth, 1024.0)
+        XCTAssertFalse(processedData.isEmpty)
+
+        if let outputImage = NSImage(data: processedData),
+           let outputCG = outputImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            XCTAssertLessThanOrEqual(outputCG.width, 1024)
+        } else {
+            XCTFail("Output should be valid JPEG data")
+        }
+
+        // Test non-image binary raw data numeric scaling fallback
+        let rawBuffer = Data([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08])
+        let scaledRaw = mockScreenCaptureService.resizeAndCompress(frameData: rawBuffer, maxWidth: 1024.0, compressionQuality: 0.7)
+        XCTAssertEqual(mockScreenCaptureService.lastProcessedWidth, 1024.0)
+        XCTAssertFalse(scaledRaw.isEmpty)
+    }
+
     public func runAllTests() async throws {
         setUp()
         try await testStartAndStopCapture()
@@ -84,6 +121,10 @@ final class ScreenCaptureTests: XCTestCase, TestRunnable {
 
         setUp()
         testRealScreenCaptureServiceImageResizingAndCompression()
+        tearDown()
+
+        setUp()
+        testMockScreenCaptureServiceImageResizingAndCompression()
         tearDown()
     }
 }

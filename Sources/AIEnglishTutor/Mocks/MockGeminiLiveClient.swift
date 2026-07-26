@@ -25,7 +25,7 @@ public class MockGeminiLiveClient: GeminiLiveClientProtocol, @unchecked Sendable
         guard !cleanKey.isEmpty else {
             throw GeminiLiveError.emptyApiKey
         }
-        guard cleanKey.count >= 8 && !cleanKey.contains("INVALID") else {
+        guard cleanKey.count >= 8 else {
             throw GeminiLiveError.invalidApiKeyFormat
         }
         if shouldFailAllConnections {

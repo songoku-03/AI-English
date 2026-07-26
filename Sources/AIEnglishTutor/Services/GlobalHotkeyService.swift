@@ -85,7 +85,7 @@ public final class GlobalHotkeyService: GlobalHotkeyServiceProtocol, @unchecked 
         let modifiers = UInt32(controlKey | optionKey)
 
         // Register ⌃⌥M (Control + Option + M, KeyCode 46)
-        var muteID = EventHotKeyID(signature: OSType(1001), id: 1)
+        let muteID = EventHotKeyID(signature: OSType(1001), id: 1)
         let muteStatus = RegisterEventHotKey(
             UInt32(46), // 'M'
             modifiers,
@@ -96,7 +96,7 @@ public final class GlobalHotkeyService: GlobalHotkeyServiceProtocol, @unchecked 
         )
 
         // Register ⌃⌥S (Control + Option + S, KeyCode 1)
-        var sessionID = EventHotKeyID(signature: OSType(1002), id: 2)
+        let sessionID = EventHotKeyID(signature: OSType(1002), id: 2)
         let sessionStatus = RegisterEventHotKey(
             UInt32(1), // 'S'
             modifiers,

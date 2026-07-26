@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import AppKit
 
 public final class MockScreenCaptureService: ScreenCaptureServiceProtocol, @unchecked Sendable {
     private let lock = NSLock()
@@ -21,7 +22,7 @@ public final class MockScreenCaptureService: ScreenCaptureServiceProtocol, @unch
         return hasPermission
     }
 
-    private func setCaptureState(isCapturing: Bool, handler: ((Data) -> Void)?) {
+    private func setCaptureState(isCapturing: Bool, handler: (@Sendable (Data) -> Void)?) {
         lock.lock()
         defer { lock.unlock() }
         self.isCapturing = isCapturing
@@ -48,17 +49,43 @@ public final class MockScreenCaptureService: ScreenCaptureServiceProtocol, @unch
         lock.lock()
         defer { lock.unlock() }
 
-        let frameString = String(data: frameData, encoding: .utf8) ?? ""
-        if frameString.contains("1920_1080") || frameString.contains("3840_2160") || frameString.contains("2560_1440") {
-            lastProcessedWidth = min(Double(maxWidth), 1024.0)
-        } else if frameString.contains("800_600") {
-            lastProcessedWidth = 800.0
-        } else {
-            lastProcessedWidth = Double(maxWidth)
+        if let image = NSImage(data: frameData),
+           let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+           cgImage.width > 0 {
+            let origWidth = Double(cgImage.width)
+            lastProcessedWidth = min(origWidth, Double(maxWidth))
+            let scaleRatio = CGFloat(lastProcessedWidth / origWidth)
+            let targetWidth = CGFloat(lastProcessedWidth)
+            let targetHeight = CGFloat(cgImage.height) * scaleRatio
+
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+            if let context = CGContext(
+                data: nil,
+                width: max(1, Int(targetWidth)),
+                height: max(1, Int(targetHeight)),
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: colorSpace,
+                bitmapInfo: bitmapInfo
+            ) {
+                context.interpolationQuality = .high
+                context.draw(cgImage, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
+                if let resizedCG = context.makeImage() {
+                    let rep = NSBitmapImageRep(cgImage: resizedCG)
+                    if let jpegData = rep.representation(using: .jpeg, properties: [.compressionFactor: compressionQuality]) {
+                        return jpegData
+                    }
+                }
+            }
         }
 
-        let outputStr = "PROCESSED_FRAME_\(Int(lastProcessedWidth))_\(compressionQuality)"
-        return outputStr.data(using: .utf8) ?? frameData
+        // Numeric scaling fallback for raw non-image binary data
+        lastProcessedWidth = Double(maxWidth)
+        guard !frameData.isEmpty else { return Data() }
+        let scaleRatio = min(1.0, Double(maxWidth) / 1024.0)
+        let targetLength = max(1, Int(Double(frameData.count) * scaleRatio))
+        return frameData.prefix(targetLength)
     }
 
     public func emitMockFrame(data: Data) {

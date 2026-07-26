@@ -1,3 +1,4 @@
+import Foundation
 #if canImport(XCTest)
 import XCTest
 #endif
@@ -20,21 +21,21 @@ final class HotkeyTests: XCTestCase, TestRunnable {
     }
 
     func testHotkeyRegistrationAndTriggers() throws {
-        var muteToggled = false
-        var sessionToggled = false
+        let muteToggled = TestBox(false)
+        let sessionToggled = TestBox(false)
 
         try mockHotkeyService.registerHotkeys(
-            onMuteToggle: { muteToggled = true },
-            onSessionToggle: { sessionToggled = true }
+            onMuteToggle: { muteToggled.value = true },
+            onSessionToggle: { sessionToggled.value = true }
         )
 
         XCTAssertTrue(mockHotkeyService.isRegistered)
 
         mockHotkeyService.triggerMuteHotkey()
-        XCTAssertTrue(muteToggled)
+        XCTAssertTrue(muteToggled.value)
 
         mockHotkeyService.triggerSessionHotkey()
-        XCTAssertTrue(sessionToggled)
+        XCTAssertTrue(sessionToggled.value)
     }
 
     func testHotkeyUnregistration() throws {

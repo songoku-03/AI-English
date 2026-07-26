@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 @MainActor
 public struct MainWindow: View {
@@ -8,6 +10,26 @@ public struct MainWindow: View {
 
     public init(viewModel: AppViewModel) {
         self.viewModel = viewModel
+    }
+
+    public func exportTranscript() {
+        let transcriptText = viewModel.exportTranscript()
+        exportedText = transcriptText
+
+        let savePanel = NSSavePanel()
+        savePanel.title = "Save Transcript"
+        savePanel.nameFieldStringValue = "Transcript.txt"
+        if #available(macOS 12.0, *) {
+            savePanel.allowedContentTypes = [.plainText]
+        } else {
+            savePanel.allowedFileTypes = ["txt"]
+        }
+
+        savePanel.begin { result in
+            if result == .OK, let url = savePanel.url {
+                try? transcriptText.write(to: url, atomically: true, encoding: .utf8)
+            }
+        }
     }
 
     public var body: some View {
@@ -39,7 +61,7 @@ public struct MainWindow: View {
                 Spacer()
 
                 Button("Export Transcript (.txt)") {
-                    exportedText = viewModel.exportTranscript()
+                    exportTranscript()
                 }
             }
 
@@ -76,3 +98,4 @@ public struct MainWindow: View {
         }
     }
 }
+

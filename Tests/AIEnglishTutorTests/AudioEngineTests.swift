@@ -1,3 +1,4 @@
+import Foundation
 #if canImport(XCTest)
 import XCTest
 #endif
@@ -20,14 +21,14 @@ final class AudioEngineTests: XCTestCase, TestRunnable {
     }
 
     func testAudioInputStreamingAndPlaybackQueue() throws {
-        var pcmDataReceived: Data?
+        let pcmDataReceived = TestBox<Data?>(nil)
         try mockAudioEngineService.startInputStreaming { data in
-            pcmDataReceived = data
+            pcmDataReceived.value = data
         }
 
         let testPCM = Data([0x01, 0x02, 0x03])
         mockAudioEngineService.simulateMicrophoneInput(pcmData: testPCM)
-        XCTAssertEqual(pcmDataReceived, testPCM)
+        XCTAssertEqual(pcmDataReceived.value, testPCM)
 
         let playbackChunk = Data([0xAA, 0xBB])
         mockAudioEngineService.playAudioChunk(data: playbackChunk)

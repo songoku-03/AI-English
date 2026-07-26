@@ -97,7 +97,7 @@ public final class AudioEngineService: AudioEngineServiceProtocol, @unchecked Se
         pcmBuffer.frameLength = frameCount
 
         if let channelData = pcmBuffer.int16ChannelData {
-            data.copyBytes(to: UnsafeMutableBufferPointer(start: channelData[0], count: data.count / 2))
+            _ = data.copyBytes(to: UnsafeMutableBufferPointer(start: channelData[0], count: data.count / 2))
         }
 
         lock.lock()
