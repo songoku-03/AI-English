@@ -70,7 +70,7 @@ public struct GenerationConfig: Codable, Equatable, Sendable {
     public var speechConfig: SpeechConfig?
 
     public init(
-        responseModalities: [String]? = ["AUDIO"],
+        responseModalities: [String]? = ["TEXT", "AUDIO"],
         speechConfig: SpeechConfig? = nil
     ) {
         self.responseModalities = responseModalities
@@ -198,7 +198,7 @@ extension GeminiMessage {
     ) -> GeminiMessage {
         let voiceConfig = VoiceConfig(prebuiltVoiceConfig: PrebuiltVoiceConfig(voiceName: voiceName))
         let speechConfig = SpeechConfig(voiceConfig: voiceConfig)
-        let genConfig = GenerationConfig(responseModalities: ["AUDIO"], speechConfig: speechConfig)
+        let genConfig = GenerationConfig(responseModalities: ["TEXT", "AUDIO"], speechConfig: speechConfig)
         let sysInstruction = SystemInstruction(parts: [TextPart(text: systemPrompt)])
         let setup = SetupConfig(model: model, generationConfig: genConfig, systemInstruction: sysInstruction)
         return GeminiMessage(setup: setup)

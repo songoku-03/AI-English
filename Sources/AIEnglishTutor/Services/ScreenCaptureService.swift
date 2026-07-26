@@ -8,6 +8,7 @@ import CryptoKit
 private final class ScreenCaptureStreamHandler: NSObject, SCStreamOutput, @unchecked Sendable {
     private let onFrame: @Sendable (Data) -> Void
     private weak var service: ScreenCaptureService?
+    private let sharedContext = CIContext()
 
     init(service: ScreenCaptureService, onFrame: @escaping @Sendable (Data) -> Void) {
         self.service = service
@@ -19,8 +20,7 @@ private final class ScreenCaptureStreamHandler: NSObject, SCStreamOutput, @unche
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        let context = CIContext()
-        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
+        guard let cgImage = sharedContext.createCGImage(ciImage, from: ciImage.extent) else { return }
 
         guard let service = service else { return }
         let compressed = service.processCGImage(cgImage, maxWidth: CGFloat(service.maxDimension), compressionQuality: 0.7)
@@ -55,6 +55,9 @@ public final class ScreenCaptureService: ScreenCaptureServiceProtocol, @unchecke
     }
 
     public func requestPermission() -> Bool {
+        if checkPermission() {
+            return true
+        }
         if #available(macOS 14.0, *) {
             return CGRequestScreenCaptureAccess()
         }
@@ -159,12 +162,23 @@ public final class ScreenCaptureService: ScreenCaptureServiceProtocol, @unchecke
             throw ScreenCaptureError.noDisplayAvailable
         }
 
-        let filter = SCContentFilter(display: targetDisplay, excludingApplications: [], exceptingWindows: [])
+        let targetDisplayID = targetDisplay.displayID
         let config = SCStreamConfiguration()
-        config.width = targetDisplay.width
-        config.height = targetDisplay.height
+        let targetWidth: Int
+        let targetHeight: Int
+        if maxDimension > 0 && max(targetDisplay.width, targetDisplay.height) > maxDimension {
+            let scale = CGFloat(maxDimension) / CGFloat(max(targetDisplay.width, targetDisplay.height))
+            targetWidth = max(2, (Int(CGFloat(targetDisplay.width) * scale) / 2) * 2)
+            targetHeight = max(2, (Int(CGFloat(targetDisplay.height) * scale) / 2) * 2)
+        } else {
+            targetWidth = max(2, (targetDisplay.width / 2) * 2)
+            targetHeight = max(2, (targetDisplay.height / 2) * 2)
+        }
+        config.width = targetWidth
+        config.height = targetHeight
         config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(1, frameRate)))
         config.pixelFormat = kCVPixelFormatType_32BGRA
+        config.showsCursor = true
 
         let streamHandler = ScreenCaptureStreamHandler(service: self, onFrame: onFrame)
         let stream = SCStream(filter: filter, configuration: config, delegate: nil)
@@ -173,6 +187,30 @@ public final class ScreenCaptureService: ScreenCaptureServiceProtocol, @unchecke
         try await stream.startCapture()
 
         finalizeCaptureStart(stream: stream, streamHandler: streamHandler)
+
+        // Immediately capture and emit Initial Frame #1 via CGDisplayCreateImage
+        if let initialCGImage = CGDisplayCreateImage(targetDisplayID) {
+            let compressed = processCGImage(initialCGImage, maxWidth: CGFloat(maxDimension), compressionQuality: 0.7)
+            if shouldEmitFrame(jpegData: compressed) {
+                onFrame(compressed)
+            }
+        }
+
+        // Quartz Fallback Timer for 100% continuous frame delivery
+        let interval = 1.0 / Double(max(1, min(15, frameRate)))
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.fallbackTimer?.invalidate()
+            self.fallbackTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+                guard let self = self, self.isCapturing else { return }
+                if let cgImage = CGDisplayCreateImage(targetDisplayID) {
+                    let compressed = self.processCGImage(cgImage, maxWidth: CGFloat(self.maxDimension), compressionQuality: 0.7)
+                    if self.shouldEmitFrame(jpegData: compressed) {
+                        onFrame(compressed)
+                    }
+                }
+            }
+        }
     }
 
     public func startCapture(displayID: CGDirectDisplayID?, onFrame: @escaping @Sendable (Data) -> Void) async throws {
@@ -191,8 +229,13 @@ public final class ScreenCaptureService: ScreenCaptureServiceProtocol, @unchecke
         isCapturing = false
         lastFrameHash = nil
         lastFrameEmittedTime = nil
+        let timer = fallbackTimer
+        fallbackTimer = nil
         lock.unlock()
 
+        DispatchQueue.main.async {
+            timer?.invalidate()
+        }
         currentStream?.stopCapture { _ in }
     }
 

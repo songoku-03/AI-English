@@ -250,7 +250,52 @@ public struct MainWindow: View {
                 .padding(14)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
 
-                // 2. Display Picker Card
+                // 2. Realtime Screen Live Preview Card
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Image(systemName: "rectangle.inset.filled.and.person.filled")
+                            .foregroundColor(.green)
+                        Text("Live Screen Preview")
+                            .font(.headline)
+                        Spacer()
+                        if viewModel.isSessionActive {
+                            HStack(spacing: 4) {
+                                Circle().fill(Color.red).frame(width: 6, height: 6)
+                                Text("REC \(viewModel.selectedFPS)FPS")
+                                    .font(.caption2)
+                                    .bold()
+                                    .foregroundColor(.red)
+                            }
+                        }
+                    }
+
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.black.opacity(0.85))
+                            .frame(height: 160)
+
+                        if let frameImage = viewModel.latestFrameImage {
+                            Image(nsImage: frameImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(height: 160)
+                                .cornerRadius(8)
+                        } else {
+                            VStack(spacing: 6) {
+                                Image(systemName: "desktopcomputer")
+                                    .font(.system(size: 28))
+                                    .foregroundColor(.secondary)
+                                Text(viewModel.isSessionActive ? "Waiting for initial frame..." : "Preview Offline")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
+
+                // 3. Display Picker Card
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         Image(systemName: "display.2")
@@ -295,7 +340,7 @@ public struct MainWindow: View {
                 .padding(14)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
 
-                // Stream Quality & FPS Card
+                // 4. Stream Quality & FPS Card
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         Image(systemName: "speedometer")
@@ -331,51 +376,6 @@ public struct MainWindow: View {
                         }
                         .pickerStyle(MenuPickerStyle())
                         .labelsHidden()
-                    }
-                }
-                .padding(14)
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
-
-                // 3. Realtime Screen Live Preview Card
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Image(systemName: "rectangle.inset.filled.and.person.filled")
-                            .foregroundColor(.green)
-                        Text("Live Screen Preview")
-                            .font(.headline)
-                        Spacer()
-                        if viewModel.isSessionActive {
-                            HStack(spacing: 4) {
-                                Circle().fill(Color.red).frame(width: 6, height: 6)
-                                Text("REC \(viewModel.selectedFPS)FPS")
-                                    .font(.caption2)
-                                    .bold()
-                                    .foregroundColor(.red)
-                            }
-                        }
-                    }
-
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(Color.black.opacity(0.85))
-                            .frame(height: 160)
-
-                        if let frameImage = viewModel.latestFrameImage {
-                            Image(nsImage: frameImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(height: 160)
-                                .cornerRadius(8)
-                        } else {
-                            VStack(spacing: 6) {
-                                Image(systemName: "desktopcomputer")
-                                    .font(.system(size: 28))
-                                    .foregroundColor(.secondary)
-                                Text(viewModel.isSessionActive ? "Waiting for initial frame..." : "Preview Offline")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
                     }
                 }
                 .padding(14)
@@ -508,6 +508,50 @@ public struct MainWindow: View {
                             }
                         }
                     }
+                }
+            }
+
+            // Pinned Bottom Live Preview & Subtitle Bar
+            if viewModel.isSessionActive {
+                VStack(spacing: 0) {
+                    Divider()
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.black.opacity(0.8))
+                                .frame(width: 84, height: 52)
+
+                            if let frameImage = viewModel.latestFrameImage {
+                                Image(nsImage: frameImage)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 84, height: 52)
+                                    .cornerRadius(6)
+                            } else {
+                                Image(systemName: "desktopcomputer")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 6) {
+                                Circle().fill(Color.red).frame(width: 6, height: 6)
+                                Text("LIVE STREAM SCREEN (\(viewModel.selectedFPS) FPS)")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.red)
+                            }
+
+                            Text(viewModel.liveSubtitle.isEmpty ? (viewModel.transcripts.last?.text ?? "AI Tutor is listening & watching live screen...") : viewModel.liveSubtitle)
+                                .font(.caption)
+                                .lineLimit(2)
+                                .foregroundColor(.primary)
+                        }
+
+                        Spacer()
+                    }
+                    .padding(10)
+                    .background(Color(NSColor.controlBackgroundColor))
                 }
             }
         }

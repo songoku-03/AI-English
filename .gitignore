@@ -7,6 +7,10 @@ DerivedData/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
 
-# Internal Agent & Execution Logs
+# Internal Agent & Tool Workspaces
+.agent/
 .agents/
+.claude/
+.gitnexus/
+openspec/
 *.log

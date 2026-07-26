@@ -1,6 +1,6 @@
 import Foundation
 
-public class MockGeminiLiveClient: GeminiLiveClientProtocol, @unchecked Sendable {
+public final class MockGeminiLiveClient: GeminiLiveClientProtocol, @unchecked Sendable {
     public var onTranscript: ((String, String) -> Void)?
     public var onAudioReceived: ((Data) -> Void)?
     public var onError: ((Error) -> Void)?

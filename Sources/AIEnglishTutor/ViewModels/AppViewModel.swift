@@ -40,6 +40,8 @@ public final class AppViewModel: ObservableObject {
 
     private var sessionStartTime: Date?
     private var permissionTimer: Timer?
+    private var isUserSpeaking: Bool = false
+    private var silenceTask: Task<Void, Never>?
 
     public init(
         config: AppConfig = AppConfig(),
@@ -208,7 +210,9 @@ public final class AppViewModel: ObservableObject {
     }
 
     public func startSession() async {
-        let _ = screenCaptureService.requestPermission()
+        if !screenCaptureService.checkPermission() {
+            let _ = screenCaptureService.requestPermission()
+        }
         hasScreenPermission = screenCaptureService.checkPermission()
 
         let key = config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -259,8 +263,38 @@ public final class AppViewModel: ObservableObject {
                 }
             }, onAudioLevel: { [weak self] level in
                 Task { @MainActor [weak self] in
-                    guard let self = self else { return }
+                    guard let self = self, self.isSessionActive, !self.isMuted else { return }
                     self.audioLevel = level
+
+                    if level > 0.12 {
+                        self.isUserSpeaking = true
+                        self.silenceTask?.cancel()
+                        self.silenceTask = nil
+                    } else if level <= 0.04, self.isUserSpeaking {
+                        if self.silenceTask == nil {
+                            self.silenceTask = Task { @MainActor [weak self] in
+                                try? await Task.sleep(nanoseconds: 800_000_000)
+                                guard let self = self, !Task.isCancelled, self.isSessionActive else { return }
+                                self.isUserSpeaking = false
+                                self.silenceTask = nil
+
+                                if let mock = self.geminiLiveClient as? MockGeminiLiveClient {
+                                    self.appendTranscript(TranscriptEntry(speaker: "User", text: "[Spoken Voice Input]"))
+                                    mock.simulateServerTranscript(
+                                        speaker: "Tutor",
+                                        text: "I hear your voice clearly! Your English pronunciation is very natural. What topic shall we practice next?"
+                                    )
+                                    let sampleCount = 8000
+                                    var pcm = Data()
+                                    for i in 0..<sampleCount {
+                                        let sample = Int16(sin(Double(i) * 0.15) * 8000.0)
+                                        withUnsafeBytes(of: sample.littleEndian) { pcm.append(contentsOf: $0) }
+                                    }
+                                    mock.simulateServerAudio(data: pcm)
+                                }
+                            }
+                        }
+                    }
                 }
             })
 
